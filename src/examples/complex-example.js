@@ -1,6 +1,6 @@
 const {fromHttpRequest} = require('../utils/http');
 const {from} = require('rxjs');
-const {mergeAll, mergeMap, map, max, toArray, filter, groupBy, count} = require('rxjs/operators');
+const {mergeAll, mergeMap, map, max, toArray, filter, groupBy, count, take} = require('rxjs/operators');
 
 // Emit the year in which there were most thriller movies
 
@@ -25,6 +25,7 @@ function getGenre(id) {
     return genres.find(genre => genre.id === id);
 }
 
+// EXAMPLE 1 : This will run fast because of the cached array
 fromHttpRequest('https://orels-moviedb.herokuapp.com/movies')
     .pipe(
         mergeAll(),
@@ -43,4 +44,29 @@ fromHttpRequest('https://orels-moviedb.herokuapp.com/movies')
         mergeMap(group => group.pipe(count(), map(movieCount => [group.key, movieCount]))),
         max((a, b) => a[1] < b[1] ? -1 : 1)
     ).subscribe(console.log);
+
+// EXAMPLE 2 : This will run very very slow if it will run on the whole dataset, so I'm running only on 100 movies.
+fromHttpRequest('https://orels-moviedb.herokuapp.com/movies')
+    .pipe(
+        mergeAll(),
+        take(100),
+        mergeMap(movie => from(movie.genres).pipe(
+            mergeMap(genreId => {
+                return fromHttpRequest(`https://orels-moviedb.herokuapp.com/genres/${genreId}`)
+                    .pipe(map(genre => genre.name))
+            }),
+            toArray(),
+            map(genres => {
+                return {
+                    year: parseInt(movie.year),
+                    genres: genres
+                }
+            })
+        )),
+        filter(movie => movie.genres.includes('thriller')),
+        groupBy(movie => movie.year),
+        mergeMap(group => group.pipe(count(), map(movieCount => [group.key, movieCount]))),
+        max((a, b) => a[1] < b[1] ? -1 : 1)
+    ).subscribe(console.log);
+
 
